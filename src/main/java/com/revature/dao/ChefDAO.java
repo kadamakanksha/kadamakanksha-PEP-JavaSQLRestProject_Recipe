@@ -5,8 +5,11 @@ import com.revature.util.PageOptions;
 import com.revature.model.Chef;
 import java.util.List;
 import java.util.ArrayList;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 
 
 /**
@@ -31,7 +34,7 @@ public class ChefDAO {
      * @param connectionUtil the utility used to connect to the database
      */
     public ChefDAO(ConnectionUtil connectionUtil) {
-        
+        this.connectionUtil = connectionUtil;
     }
 
     /**
@@ -39,8 +42,26 @@ public class ChefDAO {
      * 
      * @return a list of all Chef objects
      */
-    public List<Chef> getAllChefs() {
-        return null;
+    public List<Chef> getAllChefs(){
+        try (Connection connection = connectionUtil.getConnection()) {
+            String sql = "SELECT * FROM CHEF ORDER BY id";
+            Statement statement = connection.createStatement(); // Change to Statement as per test case expectations
+            ResultSet rs = statement.executeQuery(sql);
+
+            List<Chef> chefs = new ArrayList<>();
+            while (rs.next()) {
+                chefs.add(new Chef(
+                        rs.getInt("id"),
+                        rs.getString("username"),
+                        rs.getString("email"),
+                        rs.getString("password"),
+                        rs.getBoolean("is_admin")
+                ));
+            }
+            return chefs;
+        } catch (SQLException e) {
+            throw new RuntimeException("Error fetching all chefs", e);
+        }
     }
 
     /**
@@ -49,8 +70,38 @@ public class ChefDAO {
      * @param pageOptions options for pagination, including page size and page number
      * @return a paginated list of Chef objects
      */
-    public Page<Chef> getAllChefs(PageOptions pageOptions) {
-        return null;
+    public Page<Chef> getAllChefs(PageOptions pageOptions){
+        try (Connection connection = connectionUtil.getConnection()) {
+            String sql = "SELECT * FROM CHEF ORDER BY id LIMIT ? OFFSET ?";
+            PreparedStatement ps = connection.prepareStatement(sql);
+            ps.setInt(1, pageOptions.getPageSize());
+            ps.setInt(2, (pageOptions.getPageNumber() - 1) * pageOptions.getPageSize());
+            ResultSet rs = ps.executeQuery();
+
+            List<Chef> chefs = new ArrayList<>();
+            while (rs.next()) {
+                chefs.add(new Chef(
+                        rs.getInt("id"),
+                        rs.getString("username"),
+                        rs.getString("email"),
+                        rs.getString("password"),
+                        rs.getBoolean("is_admin")
+                ));
+            }
+
+            String countSql = "SELECT COUNT(*) FROM CHEF";
+            PreparedStatement countPs = connection.prepareStatement(countSql);
+            ResultSet countRs = countPs.executeQuery();
+            int totalCount = 0;
+            if (countRs.next()) {
+                totalCount = countRs.getInt(1);
+            }
+
+            int totalPages = (int) Math.ceil((double) totalCount / pageOptions.getPageSize());
+            return new Page<>(pageOptions.getPageNumber(), pageOptions.getPageSize(), totalPages, totalCount, chefs);
+        } catch (SQLException e) {
+            throw new RuntimeException("Error fetching paginated chefs", e);
+        }
     }
 
     /**
@@ -59,8 +110,26 @@ public class ChefDAO {
      * @param id the unique identifier of the Chef to retrieve.
      * @return the Chef object, if found.
      */
-    public Chef getChefById(int id) {
-        return null;
+    public Chef getChefById(int id){
+        try (Connection connection = connectionUtil.getConnection()) {
+            String sql = "SELECT * FROM CHEF WHERE id = ?";
+            PreparedStatement ps = connection.prepareStatement(sql);
+            ps.setInt(1, id);
+            ResultSet rs = ps.executeQuery();
+
+            if (rs.next()) {
+                return new Chef(
+                        rs.getInt("id"),
+                        rs.getString("username"),
+                        rs.getString("email"),
+                        rs.getString("password"),
+                        rs.getBoolean("is_admin")
+                );
+            }
+            return null;
+        } catch (SQLException e) {
+            throw new RuntimeException("Error fetching chef by ID: " + id, e);
+        }
     }
 
     /**
@@ -69,8 +138,24 @@ public class ChefDAO {
      * @param chef the Chef object to be created.
      * @return the unique identifier of the created Chef.
      */
-    public int createChef(Chef chef) {
-        return 0;
+    public int createChef(Chef chef){
+        try (Connection connection = connectionUtil.getConnection()) {
+            String sql = "INSERT INTO CHEF (username, email, password, is_admin) VALUES (?, ?, ?, ?)";
+            PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
+            ps.setString(1, chef.getUsername());
+            ps.setString(2, chef.getEmail());
+            ps.setString(3, chef.getPassword());
+            ps.setBoolean(4, chef.isAdmin());
+
+            ps.executeUpdate();
+            ResultSet rs = ps.getGeneratedKeys();
+            if (rs.next()) {
+                return rs.getInt(1);
+            }
+            return -1;
+        } catch (SQLException e) {
+            throw new RuntimeException("Error creating chef", e);
+        }
     }
 
     /**
@@ -78,8 +163,19 @@ public class ChefDAO {
      *
      * @param chef the Chef object containing updated information.
      */
-    public void updateChef(Chef chef) {
-        
+    public void updateChef(Chef chef){
+        try (Connection connection = connectionUtil.getConnection()) {
+            String sql = "UPDATE CHEF SET username = ?, email = ?, password = ?, is_admin = ? WHERE id = ?";
+            PreparedStatement ps = connection.prepareStatement(sql);
+            ps.setString(1, chef.getUsername());
+            ps.setString(2, chef.getEmail());
+            ps.setString(3, chef.getPassword());
+            ps.setBoolean(4, chef.isAdmin());
+            ps.setInt(5, chef.getId());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Error updating chef", e);
+        }
     }
 
     /**
@@ -87,8 +183,15 @@ public class ChefDAO {
      *
      * @param chef the Chef object to be deleted.
      */
-    public void deleteChef(Chef chef) {
-        
+    public void deleteChef(Chef chef){
+        try (Connection connection = connectionUtil.getConnection()) {
+            String sql = "DELETE FROM CHEF WHERE id = ?";
+            PreparedStatement ps = connection.prepareStatement(sql);
+            ps.setInt(1, chef.getId());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Error deleting chef", e);
+        }
     }
 
     /**
@@ -98,7 +201,27 @@ public class ChefDAO {
      * @return a list of Chef objects that match the search term.
      */
     public List<Chef> searchChefsByTerm(String term) {
-        return null;
+        try (Connection connection = connectionUtil.getConnection()) {
+            String sql = "SELECT * FROM CHEF WHERE username LIKE ? OR email LIKE ? ORDER BY id";
+            PreparedStatement ps = connection.prepareStatement(sql);
+            ps.setString(1, "%" + term + "%");
+            ps.setString(2, "%" + term + "%");
+            ResultSet rs = ps.executeQuery();
+
+            List<Chef> chefs = new ArrayList<>();
+            while (rs.next()) {
+                chefs.add(new Chef(
+                        rs.getInt("id"),
+                        rs.getString("username"),
+                        rs.getString("email"),
+                        rs.getString("password"),
+                        rs.getBoolean("is_admin")
+                ));
+            }
+            return chefs;
+        } catch (SQLException e) {
+            throw new RuntimeException("Error searching chefs by term: " + term, e);
+        }
     }
 
     /**
@@ -108,8 +231,42 @@ public class ChefDAO {
      * @param pageOptions options for pagination, including page size and page number
      * @return a paginated list of Chef objects that match the search term
      */
-    public Page<Chef> searchChefsByTerm(String term, PageOptions pageOptions) {
-        return null;
+    public Page<Chef> searchChefsByTerm(String term, PageOptions pageOptions){
+        try (Connection connection = connectionUtil.getConnection()) {
+            String sql = "SELECT * FROM CHEF WHERE username LIKE ? OR email LIKE ? ORDER BY id LIMIT ? OFFSET ?";
+            PreparedStatement ps = connection.prepareStatement(sql);
+            ps.setString(1, "%" + term + "%");
+            ps.setString(2, "%" + term + "%");
+            ps.setInt(3, pageOptions.getPageSize());
+            ps.setInt(4, (pageOptions.getPageNumber() - 1) * pageOptions.getPageSize());
+            ResultSet rs = ps.executeQuery();
+
+            List<Chef> chefs = new ArrayList<>();
+            while (rs.next()) {
+                chefs.add(new Chef(
+                        rs.getInt("id"),
+                        rs.getString("username"),
+                        rs.getString("email"),
+                        rs.getString("password"),
+                        rs.getBoolean("is_admin")
+                ));
+            }
+
+            String countSql = "SELECT COUNT(*) FROM CHEF WHERE username LIKE ? OR email LIKE ?";
+            PreparedStatement countPs = connection.prepareStatement(countSql);
+            countPs.setString(1, "%" + term + "%");
+            countPs.setString(2, "%" + term + "%");
+            ResultSet countRs = countPs.executeQuery();
+            int totalCount = 0;
+            if (countRs.next()) {
+                totalCount = countRs.getInt(1);
+            }
+
+            int totalPages = (int) Math.ceil((double) totalCount / pageOptions.getPageSize());
+            return new Page<>(pageOptions.getPageNumber(), pageOptions.getPageSize(), totalPages, totalCount, chefs);
+        } catch (SQLException e) {
+            throw new RuntimeException("Error searching paginated chefs by term: " + term, e);
+        }
     }
 
     

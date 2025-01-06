@@ -1,11 +1,13 @@
 package com.revature.service;
 
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 
 import com.revature.model.Chef;
 import com.revature.dao.ChefDAO;
 import com.revature.util.Page;
+import com.revature.util.PageOptions;
 
 /**
  * The ChefService class provides services related to Chef objects,
@@ -28,7 +30,7 @@ public class ChefService {
      * @param chefDao the ChefDao to be used by this service for data access
      */
     public ChefService(ChefDAO chefDAO) {
-        
+        this.chefDAO = chefDAO;
     }
 
     /**
@@ -39,7 +41,7 @@ public class ChefService {
      *         an empty Optional if not found
      */
     public Optional<Chef> findChef(int id) {
-        return null; 
+        return Optional.ofNullable(chefDAO.getChefById(id)); 
     }
 
     /**
@@ -48,9 +50,15 @@ public class ChefService {
      * Otherwise, updates the existing Chef.
      *
      * @param chef the Chef entity to be saved or updated
+     * @throws SQLException 
      */
     public void saveChef(Chef chef) {
-        
+        if (chef.getId() == 0) {
+            int newId = chefDAO.createChef(chef);
+            chef.setId(newId);
+        } else {
+            chefDAO.updateChef(chef);
+        }
     }
 
     
@@ -60,18 +68,23 @@ public class ChefService {
      *
      * @param term the search term for filtering Chefs by attributes
      * @return a list of Chefs matching the search criteria, or all Chefs if term is null
+	 * @throws SQLException 
      */
     public List<Chef> searchChefs(String term) {
-        return null;
+        if (term == null || term.isBlank()) {
+            return chefDAO.getAllChefs();
+        }
+        return chefDAO.searchChefsByTerm(term);
     }
 
     /**
      * TODO: Deletes a Chef based on their unique identifier, if they exist.
      *
      * @param id the unique identifier of the Chef to be deleted
+     * @throws SQLException 
      */
-    public void deleteChef(int id) {
-        
+    public void deleteChef(int id){
+        chefDAO.deleteChef(chefDAO.getChefById(id));
     }
 
     /**
@@ -86,7 +99,11 @@ public class ChefService {
      */
 	
     public Page<Chef> searchChefs(String term, int page, int pageSize, String sortBy, String sortDirection) {
-        return null;
+        PageOptions pageOptions = new PageOptions(page, pageSize);
+        if (term == null || term.isBlank()) {
+            return chefDAO.getAllChefs(pageOptions);
+        }
+        return chefDAO.searchChefsByTerm(term, pageOptions);
     }
 }
 

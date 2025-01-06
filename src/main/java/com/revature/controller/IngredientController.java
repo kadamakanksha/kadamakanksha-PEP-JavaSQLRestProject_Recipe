@@ -3,7 +3,11 @@ package com.revature.controller;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 
+import java.util.Optional;
+
+import com.revature.model.Ingredient;
 import com.revature.service.IngredientService;
+import com.revature.util.Page;
 
 
 /**
@@ -30,7 +34,7 @@ public class IngredientController {
      */
 
     public IngredientController(IngredientService ingredientService) {
-        
+        this.ingredientService = ingredientService;
     }
 
     /**
@@ -41,7 +45,14 @@ public class IngredientController {
      * @param ctx the Javalin context containing the request path parameter for the ingredient ID
      */
     public void getIngredient(Context ctx) {
-        
+        int id = Integer.parseInt(ctx.pathParam("id"));
+        Optional<Ingredient> ingredient = ingredientService.findIngredient(id);
+
+        if (ingredient.isPresent()) {
+            ctx.status(200).json(ingredient.get());
+        } else {
+            ctx.status(404).result("Ingredient not found");
+        }
     }
 
     /**
@@ -52,7 +63,15 @@ public class IngredientController {
      * @param ctx the Javalin context containing the request path parameter for the ingredient id
      */
     public void deleteIngredient(Context ctx) {
-        
+        int id = Integer.parseInt(ctx.pathParam("id"));
+        Optional<Ingredient> ingredient = ingredientService.findIngredient(id);
+
+        if (ingredient.isPresent()) {
+            ingredientService.deleteIngredient(id);
+            ctx.status(204).result("Ingredient deleted successfully");
+        } else {
+            ctx.status(404).result("Ingredient not found");
+        }
     }
 
     /**
@@ -63,7 +82,17 @@ public class IngredientController {
      * @param ctx the Javalin context containing the request path parameter and updated ingredient data in the request body
      */
     public void updateIngredient(Context ctx) {
-       
+        int id = Integer.parseInt(ctx.pathParam("id"));
+        Ingredient updatedIngredient = ctx.bodyAsClass(Ingredient.class);
+
+        Optional<Ingredient> existingIngredient = ingredientService.findIngredient(id);
+        if (existingIngredient.isPresent()) {
+            updatedIngredient.setId(id);
+            ingredientService.saveIngredient(updatedIngredient);
+            ctx.status(204).result("Ingredient updated successfully");
+        } else {
+            ctx.status(404).result("Ingredient not found");
+        }
     }
 
     /**
@@ -74,7 +103,9 @@ public class IngredientController {
      * @param ctx the Javalin context containing the ingredient data in the request body
      */
     public void createIngredient(Context ctx) {
-
+        Ingredient ingredient = ctx.bodyAsClass(Ingredient.class);
+        ingredientService.saveIngredient(ingredient);
+        ctx.status(201).json(ingredient);
     }
 
     /**
@@ -85,7 +116,23 @@ public class IngredientController {
      * @param ctx the Javalin context containing query parameters for pagination, sorting, and filtering
      */
     public void getIngredients(Context ctx) {
-       
+        String term = ctx.queryParam("term");
+        String sortBy = ctx.queryParam("sortBy") != null ? ctx.queryParam("sortBy") : "id";
+        String sortDirection = ctx.queryParam("sortDirection") != null ? ctx.queryParam("sortDirection") : "asc";
+        Integer page = getParamAsClassOrElse(ctx, "page", Integer.class, null);
+        Integer pageSize = ctx.queryParamAsClass("pageSize", Integer.class).getOrDefault(null);
+
+        if (page == null && pageSize == null && term == null) {
+            // Return all ingredients as a plain list
+            ctx.status(200).json(ingredientService.searchIngredients(term));
+        } else if (term != null && page == null && pageSize == null) {
+            // Return filtered ingredients as a plain list
+            ctx.status(200).json(ingredientService.searchIngredients(term));
+        } else {
+            // Return paginated and/or sorted ingredients
+            Page<Ingredient> ingredients = ingredientService.searchIngredients(term, page, pageSize, sortBy, sortDirection);
+            ctx.status(200).json(ingredients);
+        }
     }
 
     /**

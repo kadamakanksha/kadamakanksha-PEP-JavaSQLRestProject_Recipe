@@ -3,6 +3,7 @@ package com.revature.controller;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 
+import com.revature.model.Chef;
 import com.revature.service.AuthenticationService;
 import com.revature.service.ChefService;
 
@@ -32,7 +33,8 @@ public class AuthenticationController {
      * @param authService the service used to manage authentication-related operations
      */
     public AuthenticationController(ChefService chefService, AuthenticationService authService) {
-        
+        this.authService = authService;
+        this.chefService = chefService;
     }
 
     /**
@@ -45,7 +47,18 @@ public class AuthenticationController {
      * @param ctx the Javalin context containing the chef information in the request body
      */
     public void register(Context ctx) {
-        
+        try {
+            Chef newChef = ctx.bodyAsClass(Chef.class);
+            Chef registeredChef = authService.registerChef(newChef);
+
+            if (registeredChef != null) {
+                ctx.status(201).json(registeredChef);
+            } else {
+                ctx.status(409).result("Username already exists");
+            }
+        } catch (IllegalArgumentException e) {
+            ctx.status(400).result("Invalid input: " + e.getMessage());
+        }
     }
 
     /**
@@ -56,7 +69,16 @@ public class AuthenticationController {
      * @param ctx the Javalin context containing the chef login credentials in the request body
      */
     public void login(Context ctx) {
-        
+        Chef loginDetails = ctx.bodyAsClass(Chef.class);
+        String token = authService.login(loginDetails);
+
+        if (token != null) {
+            ctx.status(200)
+                .header("Authorization", "Bearer " + token)
+                .result(token);
+        } else {
+            ctx.status(401).result("Invalid username or password");
+        }
     }
 
     /**
@@ -65,7 +87,19 @@ public class AuthenticationController {
      * @param ctx the Javalin context, containing the Authorization token in the request header
      */
     public void logout(Context ctx) {
-        
+        String authHeader = ctx.header("Authorization");
+
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            String token = authHeader.substring(7);
+            if (authService.getChefFromSessionToken(token) != null) {
+                authService.logout(token);
+                ctx.status(200).result("Logged out successfully");
+            } else {
+                ctx.status(401).result("Unauthorized");
+            }
+        } else {
+            ctx.status(401).result("Unauthorized");
+        }
     }
 
     /**

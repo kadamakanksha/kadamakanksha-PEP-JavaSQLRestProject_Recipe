@@ -1,7 +1,10 @@
 package com.revature.dao;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -26,6 +29,7 @@ public class RecipeDAO {
 	 * DAO for managing Chef entities, used for retrieving chef details associated with recipes.
 	 */
 	private ChefDAO chefDAO;
+	
 
 	/**
 	 * DAO for managing Ingredient entities, used for retrieving ingredient details for recipes.
@@ -37,6 +41,8 @@ public class RecipeDAO {
     @SuppressWarnings("unused")
     private ConnectionUtil connectionUtil;
 
+	
+
     /**
 	 * Constructs a RecipeDAO instance with specified ChefDAO and IngredientDAO.
 	 *
@@ -47,8 +53,11 @@ public class RecipeDAO {
      * @param connectionUtil - the utility used to connect to the database
 	 */
 	public RecipeDAO(ChefDAO chefDAO, IngredientDAO ingredientDAO, ConnectionUtil connectionUtil) {
-		
-	}
+        this.chefDAO = chefDAO;
+		this.ingredientDAO = ingredientDAO;
+        this.connectionUtil = connectionUtil;
+    }
+	
 
     /**
      * TODO: Retrieves all recipes from the database.
@@ -56,8 +65,18 @@ public class RecipeDAO {
      * @return a list of all Recipe objects
      */
 
-    public List<Recipe> getAllRecipes() {
-        return(null);
+    public List<Recipe> getAllRecipes(){
+		try (Connection connection = connectionUtil.getConnection()) {
+            String sql = "SELECT * FROM RECIPE ORDER BY id";
+            Statement statement = connection.createStatement();
+            ResultSet rs = statement.executeQuery(sql);
+
+            List<Recipe> recipes = new ArrayList<>();
+            recipes = mapRows(rs);
+            return recipes;
+        } catch (SQLException e) {
+            throw new RuntimeException("Error fetching all recipes", e);
+        }
     }
 
     /**
@@ -66,8 +85,38 @@ public class RecipeDAO {
      * @param pageOptions options for pagination, including page size and page number
      * @return a paginated list of Recipe objects
      */
-    public Page<Recipe> getAllRecipes(PageOptions pageOptions) {
-        return null;
+    public Page<Recipe> getAllRecipes(PageOptions pageOptions){
+        try (Connection connection = connectionUtil.getConnection()) {
+            String sql = "SELECT * FROM RECIPE ORDER BY id LIMIT ? OFFSET ?";
+            PreparedStatement ps = connection.prepareStatement(sql);
+            ps.setInt(1, pageOptions.getPageSize());
+            ps.setInt(2, (pageOptions.getPageNumber() - 1) * pageOptions.getPageSize());
+            ResultSet rs = ps.executeQuery();
+
+            List<Recipe> recipes = new ArrayList<>();
+            while (rs.next()) {
+                Chef chef = chefDAO.getChefById(rs.getInt("chef_id"));
+                recipes.add(new Recipe(
+                        rs.getInt("id"),
+                        rs.getString("name"),
+                        rs.getString("instructions"),
+                        chef
+                ));
+            }
+
+            String countSql = "SELECT COUNT(*) FROM RECIPE";
+            PreparedStatement countPs = connection.prepareStatement(countSql);
+            ResultSet countRs = countPs.executeQuery();
+            int totalCount = 0;
+            if (countRs.next()) {
+                totalCount = countRs.getInt(1);
+            }
+
+            int totalPages = (int) Math.ceil((double) totalCount / pageOptions.getPageSize());
+            return new Page<>(pageOptions.getPageNumber(), pageOptions.getPageSize(), totalPages, totalCount, recipes);
+        } catch (SQLException e) {
+            throw new RuntimeException("Error fetching paginated recipes", e);
+        }  
     }
 
     /**
@@ -77,8 +126,28 @@ public class RecipeDAO {
      * @return a list of Recipe objects that match the search term
      */
 
-    public List<Recipe> searchRecipesByTerm(String term) {
-        return null;
+    public List<Recipe> searchRecipesByTerm(String term){
+        try (Connection connection = connectionUtil.getConnection()) {
+            String sql = "SELECT * FROM RECIPE WHERE name LIKE ? OR instructions LIKE ? ORDER BY id";
+            PreparedStatement ps = connection.prepareStatement(sql);
+            ps.setString(1, "%" + term + "%");
+            ps.setString(2, "%" + term + "%");
+            ResultSet rs = ps.executeQuery();
+
+            List<Recipe> recipes = new ArrayList<>();
+            while (rs.next()) {
+                Chef chef = chefDAO.getChefById(rs.getInt("chef_id"));
+                recipes.add(new Recipe(
+                        rs.getInt("id"),
+                        rs.getString("name"),
+                        rs.getString("instructions"),
+                        chef
+                ));
+            }
+            return recipes;
+        } catch (SQLException e) {
+            throw new RuntimeException("Error searching recipes by term: " + term, e);
+        }
     }
 
     /**
@@ -89,8 +158,37 @@ public class RecipeDAO {
      * @return a paginated list of Recipe objects that match the search term
      */
 
-    public Page<Recipe> searchRecipesByTerm(String term, PageOptions pageOptions) {
-        return null;
+    public Page<Recipe> searchRecipesByTerm(String term, PageOptions pageOptions){
+        try (Connection connection = connectionUtil.getConnection()) {
+            // Construct the SQL query with default sorting by id
+            String sql = "SELECT * FROM RECIPE WHERE name LIKE ? ORDER BY id LIMIT ? OFFSET ?";
+            PreparedStatement ps = connection.prepareStatement(sql);
+            ps.setString(1, "%" + term + "%");
+            ps.setInt(2, pageOptions.getPageSize());
+            ps.setInt(3, (pageOptions.getPageNumber() - 1) * pageOptions.getPageSize());
+    
+            ResultSet rs = ps.executeQuery();
+            List<Recipe> recipes = new ArrayList<>();
+            while (rs.next()) {
+                recipes.add(new Recipe(rs.getInt("id"), rs.getString("name"), rs.getString("instructions"), chefDAO.getChefById(rs.getInt("chef_id"))));
+            }
+    
+            // Count the total matching elements
+            String countSql = "SELECT COUNT(*) FROM RECIPE WHERE name LIKE ?";
+            PreparedStatement countPs = connection.prepareStatement(countSql);
+            countPs.setString(1, "%" + term + "%");
+            ResultSet countRs = countPs.executeQuery();
+            int totalCount = 0;
+            if (countRs.next()) {
+                totalCount = countRs.getInt(1);
+            }
+    
+            // Calculate total pages
+            int totalPages = (int) Math.ceil((double) totalCount / pageOptions.getPageSize());
+            return new Page<>(pageOptions.getPageNumber(), pageOptions.getPageSize(), totalPages, totalCount, recipes);
+        } catch (SQLException e) {
+            throw new RuntimeException("Error searching paginated recipes by term: " + term, e);
+        }
     }
 
     /**
@@ -98,10 +196,26 @@ public class RecipeDAO {
      * 
      * @param id the ID of the recipe to retrieve
      * @return the Recipe object corresponding to the given ID
+     * @throws SQLException 
      */
 
-    public Recipe getRecipeById(int id) {
-        return null;
+    public Recipe getRecipeById(int id){
+        Recipe recipe;
+		try (Connection connection = connectionUtil.getConnection()) {
+            String sql = "SELECT * FROM RECIPE WHERE id = ?";
+            PreparedStatement ps = connection.prepareStatement(sql);
+            ps.setInt(1, id);
+            ResultSet rs = ps.executeQuery();
+
+            if (rs.next()) {
+                recipe = mapSingleRow(rs);
+                System.err.println(recipe + "recipe in dao getRecipeById");
+                return recipe;
+            }
+            return null;
+        } catch (SQLException e) {
+            throw new RuntimeException("Error fetching recipe by ID: " + id, e);
+        }
     }
         
 
@@ -112,8 +226,29 @@ public class RecipeDAO {
      * @return the ID of the newly created recipe
      */
 
-    public int createRecipe(Recipe recipe) {
-        return(0);
+    public int createRecipe(Recipe recipe){
+		try (Connection connection = connectionUtil.getConnection()) {
+            String sql = "INSERT INTO RECIPE (name, instructions, chef_id) VALUES (?, ?, ?)";
+            PreparedStatement ps = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
+            ps.setString(1, recipe.getName());
+            ps.setString(2, recipe.getInstructions());
+            ps.setInt(3, recipe.getAuthor() != null ? recipe.getAuthor().getId() : null);
+
+            int affectedRows = ps.executeUpdate();
+            if (affectedRows == 0) {
+                throw new SQLException("Creating recipe failed, no rows affected.");
+            }
+
+            ResultSet rs = ps.getGeneratedKeys();
+            if (rs.next()) {
+                int newId = rs.getInt(1);
+                connection.commit();
+                return newId;
+            } 
+        return -1;
+        } catch (SQLException e) {
+            throw new RuntimeException("Error creating recipe", e);
+        }
     }
 
     /**
@@ -122,8 +257,17 @@ public class RecipeDAO {
      * @param recipe the Recipe object with updated data
      */
 
-    public void updateRecipe(Recipe recipe) {
-        
+    public void updateRecipe(Recipe recipe){
+        try (Connection connection = connectionUtil.getConnection()) {
+            String sql = "UPDATE RECIPE SET instructions = ?, chef_id = ? WHERE id = ?";
+            PreparedStatement ps = connection.prepareStatement(sql);
+            ps.setString(1, recipe.getInstructions());
+            ps.setInt(2, recipe.getAuthor().getId());
+            ps.setInt(3, recipe.getId());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Error updating recipe", e);
+        }
     }
 
     /**
@@ -132,9 +276,28 @@ public class RecipeDAO {
      * @param recipe the Recipe object to delete
      */
 
-    public void deleteRecipe(Recipe recipe) {
-        
+    public void deleteRecipe(Recipe recipe){
+		try (Connection connection = connectionUtil.getConnection()) {
+            connection.setAutoCommit(false);
+
+            // Delete dependencies in RECIPE_INGREDIENT first
+            String deleteDependencies = "DELETE FROM RECIPE_INGREDIENT WHERE recipe_id = ?";
+            PreparedStatement ps1 = connection.prepareStatement(deleteDependencies);
+            ps1.setInt(1, recipe.getId());
+            ps1.executeUpdate();
+
+            // Delete the recipe itself
+            String deleteRecipe = "DELETE FROM RECIPE WHERE id = ?";
+            PreparedStatement ps2 = connection.prepareStatement(deleteRecipe);
+            ps2.setInt(1, recipe.getId());
+            ps2.executeUpdate();
+
+            connection.commit();
+        } catch (SQLException e) {
+            throw new RuntimeException("Error deleting recipe", e);
+        }
     }
+
 
     // below are helper methods for your convenience
 	
